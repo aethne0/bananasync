@@ -1,6 +1,8 @@
 [package]
-name = "tamarun"
+name = "banan"
 version = "0.1.0"
 edition = "2024"
+description = "bananasync"
 
 [dependencies]
+io-uring = "0.7.11"
