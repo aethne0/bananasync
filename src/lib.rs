@@ -14,8 +14,7 @@ mod test {
 
     #[test]
     fn basic() {
-        let mut runtime = Runtime::new();
-        runtime.block_on(async {
+        Runtime::block_on(async {
             let res = gimme_five().await + gimme_five().await;
             assert_eq!(res, 10);
         });

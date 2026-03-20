@@ -11,13 +11,6 @@ fn main() {
             }
         });
 
-        Runtime::spawn(async {
-            loop {
-                time::snooze(Duration::from_millis(200)).await;
-                println!("200");
-            }
-        });
-
         loop {
             time::snooze(Duration::from_millis(500)).await;
             println!("500");

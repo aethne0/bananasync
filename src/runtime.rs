@@ -18,12 +18,13 @@ pub struct Runtime {
 }
 
 thread_local! {
-    static RUNTIME: RefCell<Runtime> = RefCell::new(Runtime { next_id: 1, queued: VecDeque::new(),slept: VecDeque::new()});
+    /// Thread-local runtime struct
+    static THREAD_RT: RefCell<Runtime> = RefCell::new(Runtime { next_id: 1, queued: VecDeque::new(),slept: VecDeque::new()});
 }
 
 impl Runtime {
     pub fn spawn<F: Future<Output = ()> + 'static>(future: F) {
-        RUNTIME.with_borrow_mut(|rt| {
+        THREAD_RT.with_borrow_mut(|rt| {
             rt.queued.push_back(Task {
                 id: rt.next_id,
                 future: Box::pin(future),
@@ -37,10 +38,10 @@ impl Runtime {
 
         loop {
             loop {
-                if let Some(mut task) = RUNTIME.with_borrow_mut(|rt| rt.queued.pop_front()) {
+                if let Some(mut task) = THREAD_RT.with_borrow_mut(|rt| rt.queued.pop_front()) {
                     match task.future.as_mut().poll(&mut cx) {
                         Poll::Pending => {
-                            RUNTIME.with_borrow_mut(|rt| {
+                            THREAD_RT.with_borrow_mut(|rt| {
                                 rt.slept.push_back(task);
                             });
                         }
@@ -53,7 +54,7 @@ impl Runtime {
                 }
             }
 
-            RUNTIME.with_borrow_mut(|rt| {
+            THREAD_RT.with_borrow_mut(|rt| {
                 if rt.slept.is_empty() {
                     return;
                 }
