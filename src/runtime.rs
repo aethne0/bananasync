@@ -1,36 +1,66 @@
 use std::{
+    cell::RefCell,
     collections::VecDeque,
-    pin,
+    pin::Pin,
     task::{Context, Poll, Waker},
 };
 
-pub struct Task {}
+struct Task {
+    id: u64,
+    future: Pin<Box<dyn Future<Output = ()> + 'static>>,
+}
 
+/// A thread-local runtime
 pub struct Runtime {
+    next_id: u64,
     queued: VecDeque<Task>,
     slept: VecDeque<Task>,
 }
 
+thread_local! {
+    static RUNTIME: RefCell<Runtime> = RefCell::new(Runtime { next_id: 1, queued: VecDeque::new(),slept: VecDeque::new()});
+}
+
 impl Runtime {
-    #[must_use]
-    pub fn new() -> Self {
-        Runtime {
-            queued: VecDeque::new(),
-            slept: VecDeque::new(),
-        }
+    pub fn spawn<F: Future<Output = ()> + 'static>(future: F) {
+        RUNTIME.with_borrow_mut(|rt| {
+            rt.queued.push_back(Task {
+                id: rt.next_id,
+                future: Box::pin(future),
+            });
+        });
     }
 
-    pub fn block_on<F: Future>(&mut self, future: F) -> F::Output {
-        let mut task = pin::pin!(future);
+    pub fn block_on<F: Future<Output = ()> + 'static>(future: F) {
+        Runtime::spawn(future);
         let mut cx = Context::from_waker(Waker::noop());
 
         loop {
-            match task.as_mut().poll(&mut cx) {
-                Poll::Pending => {}
-                Poll::Ready(val) => {
-                    return val;
+            loop {
+                if let Some(mut task) = RUNTIME.with_borrow_mut(|rt| rt.queued.pop_front()) {
+                    match task.future.as_mut().poll(&mut cx) {
+                        Poll::Pending => {
+                            RUNTIME.with_borrow_mut(|rt| {
+                                rt.slept.push_back(task);
+                            });
+                        }
+                        Poll::Ready(val) => {
+                            return val;
+                        }
+                    }
+                } else {
+                    break;
                 }
             }
+
+            RUNTIME.with_borrow_mut(|rt| {
+                if rt.slept.is_empty() {
+                    return;
+                }
+
+                // temporary busy loop - simply plop all slep tasks into queeu
+                std::mem::swap(&mut rt.queued, &mut rt.slept);
+            });
         }
     }
 }

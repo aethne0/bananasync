@@ -50,3 +50,4 @@ impl Future for SnoozeFut {
 pub fn snooze(duration: Duration) -> SnoozeFut {
     SnoozeFut::new(duration)
 }
+
