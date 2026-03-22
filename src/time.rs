@@ -5,6 +5,8 @@ use std::{
     time::{Duration, Instant},
 };
 
+use crate::runtime::RUNTIME_LOCAL;
+
 /// Snoozer is an `impl Future` that starts a timer when it is first polled.
 pub struct SnoozeFut {
     duration: Duration,
@@ -24,20 +26,21 @@ impl SnoozeFut {
 impl Future for SnoozeFut {
     type Output = ();
 
-    fn poll(mut self: pin::Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Self::Output> {
+    fn poll(mut self: pin::Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         // If a zero duration was passed in we can be Ready immediately
         if self.duration.is_zero() {
             return Poll::Ready(());
         }
 
-        if let Some(deadline) = self.deadline {
-            if Instant::now() >= deadline {
-                Poll::Ready(())
-            } else {
-                Poll::Pending
-            }
+        let duration = self.duration; // no-borrow
+        let deadline = *self.deadline.get_or_insert(Instant::now().add(duration));
+
+        if Instant::now() >= deadline {
+            Poll::Ready(())
         } else {
-            self.deadline = Some(Instant::now().add(self.duration));
+            RUNTIME_LOCAL.with_borrow_mut(|rt| {
+                rt.register_timer(deadline, cx.waker().clone());
+            });
             Poll::Pending
         }
     }
@@ -50,4 +53,3 @@ impl Future for SnoozeFut {
 pub fn snooze(duration: Duration) -> SnoozeFut {
     SnoozeFut::new(duration)
 }
-
