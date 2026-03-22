@@ -2,6 +2,7 @@ use std::{
     cell::RefCell,
     cmp::Reverse,
     collections::{BinaryHeap, HashMap, VecDeque},
+    ops::Sub,
     pin::Pin,
     sync::Arc,
     task::{Context, Poll, Waker},
@@ -20,9 +21,11 @@ struct TaskWaker {
 impl std::task::Wake for TaskWaker {
     fn wake(self: Arc<Self>) {
         RUNTIME_LOCAL.with_borrow_mut(|rt| {
-            if let Some(task) = rt.slept.remove(&self.task_id) {
-                rt.queued.push_back(task);
-            }
+            let task = rt
+                .slept
+                .remove(&self.task_id)
+                .expect("woke with no slept tasks?");
+            rt.queued.push_back(task);
         });
     }
 }
@@ -61,6 +64,7 @@ impl Runtime {
                 id: rt.next_id_task,
                 future: Box::pin(future),
             });
+            rt.next_id_task += 1;
         });
     }
 
@@ -68,22 +72,14 @@ impl Runtime {
         Runtime::spawn(future);
 
         loop {
-            let mut polled_any = false;
-
             while let Some(mut task) = RUNTIME_LOCAL.with_borrow_mut(|rt| rt.queued.pop_front()) {
-                polled_any = true;
-                let task_id = task.id;
-
-                let waker: Waker = Arc::new(TaskWaker { task_id }).into();
+                let waker: Waker = Arc::new(TaskWaker { task_id: task.id }).into();
                 let mut cx = Context::from_waker(&waker);
 
                 match task.future.as_mut().poll(&mut cx) {
                     Poll::Pending => {
                         RUNTIME_LOCAL.with_borrow_mut(|rt| {
-                            rt.slept.insert(task_id, task);
-                            rt.slept.drain().for_each(|(_, t)| {
-                                rt.queued.push_back(t);
-                            });
+                            rt.slept.insert(task.id, task);
                         });
                     }
 
@@ -91,12 +87,6 @@ impl Runtime {
                         return val;
                     }
                 }
-
-                break;
-            }
-
-            if polled_any {
-                continue;
             }
 
             let waker = RUNTIME_LOCAL.with_borrow_mut(|rt| {
@@ -108,7 +98,7 @@ impl Runtime {
                     "only timers are implemented - presence of slept task must mean theres a timer",
                 ).0.0;
 
-                std::thread::sleep(most_soon_timer.duration_since(Instant::now()));
+                std::thread::sleep(most_soon_timer.sub(Instant::now()));
 
                 let event_id = rt.timers.pop().unwrap().0 .1;
                 rt.timer_wakers.remove(&event_id)
@@ -116,6 +106,12 @@ impl Runtime {
 
             if let Some(waker) = waker {
                 waker.wake();
+            } else if RUNTIME_LOCAL
+                .with_borrow_mut(|rt| rt.queued.is_empty() && rt.slept.is_empty())
+            {
+                // if we didnt wake anything we check if queued && slept are,
+                // if so runtime is done executing.
+                break;
             }
         }
     }
