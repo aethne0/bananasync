@@ -104,9 +104,6 @@ impl Runtime {
             Runtime::spawn(future);
 
             loop {
-                // {} because we want the expression to be droped, we are moving the task out and
-                // we dont want to keep holding the RefCell mut borrow (while-let isnt a temporary
-                // scope)
                 while let Some(mut task) = {rt_tls.borrow_mut().as_mut().unwrap().queued.pop_front()} {
                     let waker: Waker = Arc::new(TaskWaker { task_id: task.id }).into();
                     let mut cx = Context::from_waker(&waker);
