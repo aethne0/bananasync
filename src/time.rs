@@ -39,7 +39,9 @@ impl Future for SnoozeFut {
             Poll::Ready(())
         } else {
             RUNTIME_LOCAL.with_borrow_mut(|rt| {
-                rt.register_timer(deadline, cx.waker().clone());
+                rt.as_mut()
+                    .unwrap()
+                    .register_timer(deadline, cx.waker().clone());
             });
             Poll::Pending
         }

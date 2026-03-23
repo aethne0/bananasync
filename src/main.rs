@@ -1,4 +1,4 @@
-use std::{time::Duration};
+use std::time::Duration;
 
 use banan::{time, Runtime};
 
@@ -7,13 +7,12 @@ fn main() {
         Runtime::spawn(async {
             loop {
                 time::snooze(Duration::from_millis(333)).await;
-                println!(">>>333");
+                println!("333");
             }
         });
-
         loop {
-            time::snooze(Duration::from_millis(500)).await;
-            println!("500<<<");
+            time::snooze(Duration::from_millis(450)).await;
+            println!("450");
         }
     });
 }
